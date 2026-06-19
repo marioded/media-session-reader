@@ -11,11 +11,11 @@ mod linux;
 pub fn current_track() -> Option<Track> {
     #[cfg(target_os = "windows")]
     {
-        return windows::current_track();
+        windows::current_track()
     }
 
     #[cfg(target_os = "linux")]
     {
-        return linux::current_track();
+        linux::current_track()
     }
 }

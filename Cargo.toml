@@ -3,6 +3,13 @@ name = "media-session-reader"
 version = "0.0.1"
 edition = "2024"
 
+description = "Cross-platform Rust library to read the current media session"
+license = "MIT"
+repository = "https://github.com/marioded/media-session-reader"
+readme = "README.md"
+keywords = ["media", "player", "windows", "linux"]
+categories = ["multimedia", "os"]
+
 [dependencies]
 base64 = "0.22.1"
 image = "0.25.10"
