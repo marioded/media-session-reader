@@ -1,0 +1,15 @@
+[package]
+name = "media-session-reader"
+version = "0.0.1"
+edition = "2024"
+
+[dependencies]
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.58", features = [
+    "Media_Control",
+    "Foundation"
+] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+mpris = "2"
