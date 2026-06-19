@@ -1,6 +1,6 @@
 mod types;
 
-pub use types::Track;
+pub use types::{Cover, RepeatMode, Track};
 
 #[cfg(target_os = "windows")]
 mod windows;
@@ -9,7 +9,6 @@ mod windows;
 mod linux;
 
 pub fn current_track() -> Option<Track> {
-
     #[cfg(target_os = "windows")]
     {
         return windows::current_track();
@@ -19,7 +18,4 @@ pub fn current_track() -> Option<Track> {
     {
         return linux::current_track();
     }
-
-    #[allow(unreachable_code)]
-    None
 }
