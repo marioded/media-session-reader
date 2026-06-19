@@ -1,10 +1,5 @@
 use crate::Track;
-
-use mpris::{
-    PlayerFinder,
-    PlaybackStatus
-};
-
+use mpris::{PlayerFinder, PlaybackStatus};
 
 pub fn current_track() -> Option<Track> {
 
@@ -28,46 +23,54 @@ pub fn current_track() -> Option<Track> {
     let position =
         player
         .get_position()
-        .ok()?;
+        .ok()?
+        .as_millis()
+        as u64;
 
 
-    let status =
+    let duration =
+        metadata
+        .length()?
+        .as_millis()
+        as u64;
+
+
+
+    let title =
+        metadata
+        .title()
+        .unwrap_or("Unknown")
+        .to_string();
+
+
+    let artist =
+        metadata
+        .artists()
+        .and_then(|a| a.first())
+        .unwrap_or(&"Unknown".to_string())
+        .to_string();
+
+
+
+    let playing =
         player
         .get_playback_status()
-        .ok()?;
+        .ok()?
+        ==
+        PlaybackStatus::Playing;
 
 
 
     Some(Track {
 
-        title:
-            metadata
-            .title()
-            .unwrap_or("")
-            .to_string(),
+        title,
 
+        artist,
 
-        artist:
-            metadata
-            .artists()
-            .and_then(|x| x.first())
-            .unwrap_or(&"")
-            .to_string(),
+        duration_ms: duration,
 
+        position_ms: position,
 
-        duration_ms:
-            metadata
-            .length()
-            .map(|x| x.as_millis() as u64)
-            .unwrap_or(0),
-
-
-        position_ms:
-            position
-            .as_millis() as u64,
-
-
-        playing:
-            status == PlaybackStatus::Playing,
+        playing,
     })
 }
