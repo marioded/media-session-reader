@@ -1,8 +1,10 @@
 use crate::{Cover, RepeatMode, Track};
 
+use std::collections::HashMap;
 use std::fs;
 
-use mpris::{PlaybackStatus, PlayerFinder};
+use zbus::blocking::{Connection, Proxy};
+use zvariant::OwnedValue;
 
 fn get_cover(url: Option<&str>) -> Option<Cover> {
     let url = url?;
@@ -17,65 +19,129 @@ fn get_cover(url: Option<&str>) -> Option<Cover> {
 
     Some(Cover {
         data,
-
         mime: "image/jpeg".to_string(),
     })
 }
 
+fn get_players(connection: &Connection) -> Option<Vec<String>> {
+    let proxy = Proxy::new(
+        connection,
+        "org.freedesktop.DBus",
+        "/org/freedesktop/DBus",
+        "org.freedesktop.DBus",
+    )
+    .ok()?;
+
+    let names: Vec<String> = proxy.call("ListNames", &()).ok()?;
+
+    Some(
+        names
+            .into_iter()
+            .filter(|n| n.starts_with("org.mpris.MediaPlayer2."))
+            .collect(),
+    )
+}
+
 pub fn current_track() -> Option<Track> {
-    let finder = PlayerFinder::new().ok()?;
+    let connection = Connection::session().ok()?;
 
-    let player = finder.find_active().ok()?;
+    let player_name = get_players(&connection)?.first()?.clone();
 
-    let metadata = player.get_metadata().ok()?;
+    let player = Proxy::new(
+        &connection,
+        player_name,
+        "/org/mpris/MediaPlayer2",
+        "org.mpris.MediaPlayer2.Player",
+    )
+    .ok()?;
 
-    let position = player.get_position().ok()?.as_millis() as u64;
+    let metadata: HashMap<String, OwnedValue> = player.get_property("Metadata").ok()?;
 
-    let duration = metadata.length()?.as_millis() as u64;
-
-    let title = metadata.title().unwrap_or("Unknown").to_string();
+    let title = metadata
+        .get("xesam:title")
+        .and_then(|v| {
+            let r: Result<String, _> = v.clone().try_into();
+            r.ok()
+        })
+        .unwrap_or_else(|| "Unknown".into());
 
     let artist = metadata
-        .artists()
-        .and_then(|a| a.first())
-        .map(|x| x.to_string())
-        .unwrap_or("Unknown".to_string());
+        .get("xesam:artist")
+        .and_then(|v| {
+            let r: Result<Vec<String>, _> = v.clone().try_into();
+            r.ok()
+        })
+        .and_then(|v| v.first().cloned())
+        .unwrap_or_else(|| "Unknown".into());
 
-    let album = metadata.album().map(|x| x.to_string());
-
-    let album_artist = metadata
-        .album_artists()
-        .and_then(|a| a.first())
-        .map(|x| x.to_string());
-
-    let cover = get_cover(metadata.art_url());
-
-    let playing = player.get_playback_status().ok()? == PlaybackStatus::Playing;
-
-    let shuffle = player.get_shuffle().ok();
-
-    let repeat = player.get_loop_status().ok().map(|mode| match mode {
-        mpris::LoopStatus::None => RepeatMode::None,
-
-        mpris::LoopStatus::Track => RepeatMode::Track,
-
-        mpris::LoopStatus::Playlist => RepeatMode::Playlist,
-
-        _ => RepeatMode::None,
+    let album = metadata.get("xesam:album").and_then(|v| {
+        let r: Result<String, _> = v.clone().try_into();
+        r.ok()
     });
 
-    let can_next = player.can_go_next().unwrap_or(false);
-
-    let can_previous = player.can_go_previous().unwrap_or(false);
-
-    let position_ms = position.min(duration);
-
-    let track_number = metadata.track_number().map(|x| x as u32);
+    let album_artist = metadata
+        .get("xesam:albumArtist")
+        .and_then(|v| {
+            let r: Result<Vec<String>, _> = v.clone().try_into();
+            r.ok()
+        })
+        .and_then(|v| v.first().cloned());
 
     let genre = metadata
-        .genre()
-        .and_then(|x| x.first())
-        .map(|x| x.to_string());
+        .get("xesam:genre")
+        .and_then(|v| {
+            let r: Result<Vec<String>, _> = v.clone().try_into();
+            r.ok()
+        })
+        .and_then(|v| v.first().cloned());
+
+    let cover = metadata
+        .get("mpris:artUrl")
+        .and_then(|v| {
+            let r: Result<String, _> = v.clone().try_into();
+            r.ok()
+        })
+        .and_then(|url| get_cover(Some(&url)));
+
+    let duration = metadata
+        .get("mpris:length")
+        .and_then(|v| {
+            let r: Result<i64, _> = v.clone().try_into();
+            r.ok()
+        })
+        .unwrap_or(0);
+
+    let position: i64 = player.get_property("Position").unwrap_or(0);
+
+    let playing = player
+        .get_property::<String>("PlaybackStatus")
+        .map(|x| x == "Playing")
+        .unwrap_or(false);
+
+    let shuffle = player.get_property::<bool>("Shuffle").ok();
+
+    let repeat = player
+        .get_property::<String>("LoopStatus")
+        .ok()
+        .map(|x| match x.as_str() {
+            "Track" => RepeatMode::Track,
+            "Playlist" => RepeatMode::Playlist,
+            _ => RepeatMode::None,
+        });
+
+    let can_next = player.get_property::<bool>("CanGoNext").unwrap_or(false);
+
+    let can_previous = player
+        .get_property::<bool>("CanGoPrevious")
+        .unwrap_or(false);
+
+    let track_number = metadata
+        .get("xesam:trackNumber")
+        .and_then(|v| {
+            let r: Result<i32, _> = v.clone().try_into();
+            r.ok()
+        })
+        .map(|x| x as u32);
 
     Some(Track {
         title,
@@ -83,8 +149,8 @@ pub fn current_track() -> Option<Track> {
         album,
         album_artist,
         cover,
-        duration_ms: duration,
-        position_ms,
+        duration_ms: (duration / 1000) as u64,
+        position_ms: (position / 1000) as u64,
         playing,
         playback_rate: None,
         shuffle,
