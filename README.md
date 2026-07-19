@@ -26,7 +26,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-media-session-reader = "0.0.1"
+media-session-reader = "0.0.2"
 ```
 
 ## Basic usage
